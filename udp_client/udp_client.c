@@ -230,5 +230,5 @@ int main (int argc, char *argv[])
 
 ERR:
     close(sock);
-    return -1;
+    return 1;
 }
