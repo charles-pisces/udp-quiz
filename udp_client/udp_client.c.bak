@@ -1,0 +1,88 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <errno.h>
+
+int port = 12345;
+
+int main()
+{
+    int sock;
+    int iter = 0;
+
+    ssize_t sendto_rc;
+    int close_rc;
+
+    char buf[80];
+    struct sockaddr_in address;
+    struct hostent *hostbyname;
+
+    //Translate a host name to IP address
+    hostbyname = gethostbyname("127.0.0.1");
+    if(hostbyname == NULL)
+    {
+        perror("Gethostbyname failed");
+        exit(errno);
+    }
+
+    /* Initialize socket address structure for Interner Protocols.The address comes from the datastructure returned by gethostbyname() */
+    bzero(&address, sizeof(address)); // empty data structure
+    address.sin_family = AF_INET;
+
+    memcpy(&address.sin_addr.s_addr, hostbyname->h_addr, sizeof(address.sin_addr.s_addr));
+
+    //print the host IP
+    printf("The host IP is %s\n", inet_ntoa(*(struct in_addr*)hostbyname->h_addr));   
+
+    //address.sin_addr.s_addr = inet_addr("127.0.0.1");
+    address.sin_port = htons(port);
+
+    /* Create a UDP socket */
+    sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if(sock == -1)
+    {
+        perror("socket call failed");
+        exit(errno);
+    }
+
+    //Loop 20 times (a nice round number ) sending data
+    for(iter = 0; iter <= 20; iter++)
+    {
+        sprintf(buf, "data packet with ID %d\n", iter);
+        sendto_rc = sendto(sock, buf, sizeof(buf), 0, (struct sockaddr *)&address, sizeof(address));
+        if(sendto_rc == -1)
+        {
+            perror("sendto call failed");
+            exit(errno);
+        }
+       
+        sleep(3); //this is the only difference form sender2.c
+       
+    }   
+
+    /* send a termination message */
+    sprintf(buf, "stop\n");
+    sendto_rc = sendto(sock, buf, sizeof(buf), 0, (struct sockaddr *)&address, sizeof(address)); //address is the target of the message send
+    if(sendto_rc == -1)
+    {
+        perror("sendto  STOP call failed");
+        exit(errno);
+    }
+   
+
+    //Most people don''t bother to check the return code returned by the close function
+    close_rc = close (sock);
+    if(close_rc == -1)
+    {
+        perror("close call failed");
+        exit(errno);
+    }
+
+    printf("Message Sent, Terminating\n");
+    return 0;
+}
+
