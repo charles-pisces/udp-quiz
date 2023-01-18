@@ -129,18 +129,39 @@ static int udp_select_check(int sock)
 }
 
 
+static int is_param_valid(int argc, 
+                          char *argv[], 
+                          int *server_port)
+{
+    if (argc != 2) {
+		printf("[Usage] ./udp_server <server port> \n");
+		return -1;
+	}
+
+    *server_port = atoi(argv[1]);
+	if (*server_port <= 0) {
+        printf("Invalid <Server Port>. \n");
+		return -1;
+    }
+
+    return 0;
+}
+
+
 int main (int argc, char *argv[])
 {
     int rc = -1;
     int sock = -1;
+    int server_port = 0;
     char buf[BUF_SIZE];
     struct sockaddr_in from;
     socklen_t sock_len = sizeof(struct sockaddr_in);
     
+    CHECK_FUNC_ERR(is_param_valid(argc, argv, &server_port), rc)
+    
     printf("UDP Server Start.\n");
-
     CHECK_FUNC_ERR(socket(AF_INET, SOCK_DGRAM, 0), sock)
-    CHECK_FUNC_ERR(udp_bind_port(sock, SERVER_PORT), rc)
+    CHECK_FUNC_ERR(udp_bind_port(sock, server_port), rc)
     
     while (true) {
         CHECK_FUNC_ERR(udp_select_check(sock), rc)

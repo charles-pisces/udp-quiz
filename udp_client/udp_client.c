@@ -84,17 +84,12 @@ static int udp_select_check(int sock)
 
 
 static int udp_send(int sock, 
-                    int port, 
+                    struct sockaddr_in *client, 
                     char* buf)
 {
     int rc = -1;
-    struct sockaddr_in client;
     
-    client.sin_family = AF_INET;
-    client.sin_addr.s_addr = inet_addr("127.0.0.1");
-    client.sin_port = htons( port );    
-
-    rc = sendto(sock, buf, BUF_SIZE, 0, (struct sockaddr *)&client, sizeof(client));
+    rc = sendto(sock, buf, BUF_SIZE, 0, (struct sockaddr *)client, sizeof(struct sockaddr_in));
     if (rc == -1)
         perror("sendto call failed");
     
@@ -128,7 +123,7 @@ static int udp_recv(int sock,
 }
 
 
-static int udp_send_delay(int *retry_cnt)
+static int udp_send_delay(int *retry_cnt, int max_retry_cnt)
 {
     /*
      * Exponential Backoff Algorithm:
@@ -138,7 +133,7 @@ static int udp_send_delay(int *retry_cnt)
 
     (*retry_cnt)++;
 
-    if (*retry_cnt > MAX_RETRY_CNT)
+    if (*retry_cnt > max_retry_cnt)
         return -1;
 
     wait_time = (int)((EB_BASE * (1 << *retry_cnt)) / 1000);
@@ -151,18 +146,72 @@ static int udp_send_delay(int *retry_cnt)
 }
 
 
+static bool is_valid_ip(char *ip)
+{
+    struct sockaddr_in sa;
+    int rc = inet_pton(AF_INET, ip, &(sa.sin_addr));
+    return rc != 0;
+}
+
+
+static int is_param_valid(int argc, 
+                          char *argv[], 
+                          struct sockaddr_in *client,
+                          int *max_retry_cnt)
+{
+    int server_port = 0;
+
+    if (argc != 5) {
+		printf("[Usage] ./udp_client <Server IP> <Server Port> <Message> <Max-Retry>\n");
+		return -1;
+	}
+
+    if (!is_valid_ip(argv[1])) {
+        printf("Invalid <Server IP>. \n");
+		return -1;
+    }
+
+    server_port = atoi(argv[2]);
+	if (server_port <= 0) {
+        printf("Invalid <Server Port>. \n");
+		return -1;
+    }
+
+    if (strlen(argv[3]) > 255) {
+        printf("Invalid <Message>. Message length > 255.\n");
+		return -1;
+    }
+
+    *max_retry_cnt = atoi(argv[4]);
+	if (*max_retry_cnt <= 0 || *max_retry_cnt > 10) {
+        printf("Invalid <Max-Retry>. Range: 0 < Max-Retry <= 10.\n");
+		return -1;
+    }
+
+    client->sin_family = AF_INET;
+    client->sin_addr.s_addr = inet_addr(argv[1]);
+    client->sin_port = htons(server_port);    
+
+    return 0;
+}
+
+
 int main (int argc, char *argv[])
 {
     int rc = -1;
     int sock = -1;
+    struct sockaddr_in client;
     char send_buf[BUF_SIZE], recv_buf[BUF_SIZE];
-    int retry_cnt = 0;
+    int max_retry_cnt = 0, retry_cnt = 0;
 
+    CHECK_FUNC_ERR(is_param_valid(argc, argv, &client, &max_retry_cnt), rc)
+    
+    printf("UDP Client Start.\n");
     CHECK_FUNC_ERR(init_udp_socket(), sock)
     
     for (int i = 0; i <= 20000; ) {
-        sprintf(send_buf, "packet_id[%d]\n", i);
-        CHECK_FUNC_ERR(udp_send(sock, SERVER_PORT, send_buf), rc)
+        sprintf(send_buf, "%s[%d]\n", argv[3], i);
+        CHECK_FUNC_ERR(udp_send(sock, &client, send_buf), rc)
         CHECK_FUNC_ERR(udp_select_check(sock), rc)
         if (rc > 0) {
             CHECK_FUNC_ERR(udp_recv(sock, recv_buf, send_buf), rc)
@@ -173,7 +222,7 @@ int main (int argc, char *argv[])
             }
         } else if (rc == 0) {
             // Delay for a while since server might be busy.
-            CHECK_FUNC_ERR(udp_send_delay(&retry_cnt), rc)
+            CHECK_FUNC_ERR(udp_send_delay(&retry_cnt, max_retry_cnt), rc)
             sleep(rc);
         }
     }
