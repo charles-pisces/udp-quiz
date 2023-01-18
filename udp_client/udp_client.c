@@ -9,9 +9,9 @@
 
 #define BUF_SIZE                255
 // Exponential Backoff Algorithm parameters
-#define EB_BASE                 500     // 500ms
+#define EB_BASE                 500             // 500ms
 #define EB_MULTIPLIER           2
-#define EB_MAX_WAIT_TIME        8       // 8s
+#define EB_MAX_WAIT_TIME        8000000         // 8s
 
 
 #define CHECK_FUNC_ERR(func, rc) {									\
@@ -56,13 +56,20 @@ static int init_udp_socket()
 }
 
 
-static int udp_select_check(int sock) 
+static int udp_select_check(int sock, 
+                            int echo_wait_time) 
 {	
     struct timeval timeout; 
     fd_set r_fd;
     
-    timeout.tv_sec = 1; 
-    timeout.tv_usec = 0; 
+    if (echo_wait_time == 0) {
+        timeout.tv_sec = 0; 
+        timeout.tv_usec = 10;
+    } else {
+        timeout.tv_sec = echo_wait_time / 1000000; 
+        timeout.tv_usec = echo_wait_time % 1000000;
+    }
+     
     FD_ZERO(&r_fd); 
     FD_SET(sock, &r_fd); 
     
@@ -97,7 +104,8 @@ static int udp_send(int sock,
 
 static int udp_recv(int sock, 
                     char* recv_buf, 
-                    char* send_buf)
+                    char* send_buf,
+                    int retry_cnt)
 {
     int rc = -1;
     struct sockaddr_in from;
@@ -106,7 +114,7 @@ static int udp_recv(int sock,
     memset(recv_buf, 0, BUF_SIZE);  
     rc = recvfrom(sock, recv_buf, BUF_SIZE, 0, (struct sockaddr*)&from, &sock_len);
     if (rc > 0) {
-        printf("Received Echo: %s\n", recv_buf);
+        printf("Received Echo[r:%d]: %s\n", retry_cnt, recv_buf);
     } else {
         if (errno == EWOULDBLOCK || errno == EAGAIN) {
             rc = 0;
@@ -134,11 +142,11 @@ static int udp_send_delay(int *retry_cnt, int max_retry_cnt)
     if (*retry_cnt > max_retry_cnt)
         return -1;
 
-    wait_time = (int)((EB_BASE * (1 << *retry_cnt)) / 1000);
+    wait_time = (EB_BASE * (1 << *retry_cnt));
     if (wait_time > EB_MAX_WAIT_TIME)
         wait_time = EB_MAX_WAIT_TIME;
     
-    printf("retry_cnt: %d, wait_time: %d\n", *retry_cnt, wait_time);
+    printf("retry_cnt: %d, wait_time: %d (ms)\n", *retry_cnt, wait_time);
     
     return wait_time;
 }
@@ -160,34 +168,34 @@ static int is_param_valid(int argc,
     int server_port = 0;
     
     if (argc != 5) {
-		printf("[Usage] ./udp_client <Server IP> <Server Port> <Message> <Max-Retry>\n\n");
-        printf("<Server IP>: The server ip \n");
-        printf("<Server Port>: The server port \n");
-        printf("<Message>: The message sent to server. 0 < Message length < 255. \n");
-        printf("<Max-Retry>: The max retry count that no echo data received from server. Range: 0 < Max-Retry <= 10.\n\n");
-        
-		return -1;
+		printf("[Usage] ./udp_client <server_iP> <server_port> <message> <max_retry> <echo_wait_time>\n\n");
+        printf("<server_iP>: The server ip \n");
+        printf("<server_port>: The server port \n");
+        printf("<message>: The message sent to server. 0 < Message length < 255. \n");
+        printf("<max_retry>: The max retry count that no echo data received from server. Range: 0 < Max-Retry <= 10.\n");
+    
+        return -1;
 	}
 
     if (!is_valid_ip(argv[1])) {
-        printf("Invalid <Server IP>. \n");
+        printf("Invalid <server_ip>. \n");
 		return -1;
     }
 
     server_port = atoi(argv[2]);
 	if (server_port <= 0) {
-        printf("Invalid <Server Port>. \n");
+        printf("Invalid <server_port>. \n");
 		return -1;
     }
 
     if (strlen(argv[3]) > 255) {
-        printf("Invalid <Message>. Message length > 255.\n");
+        printf("Invalid <message>. Message length > 255.\n");
 		return -1;
     }
 
     *max_retry_cnt = atoi(argv[4]);
 	if (*max_retry_cnt <= 0 || *max_retry_cnt > 10) {
-        printf("Invalid <Max-Retry>. Range: 0 < Max-Retry <= 10.\n");
+        printf("Invalid <max_retry>. Range: 0 < Max-Retry <= 10.\n");
 		return -1;
     }
 
@@ -204,30 +212,31 @@ int main (int argc, char *argv[])
     int rc = -1;
     int sock = -1;
     struct sockaddr_in client;
+    struct timeval timeout;
     char send_buf[BUF_SIZE], recv_buf[BUF_SIZE];
     int max_retry_cnt = 0, retry_cnt = 0;
+    int echo_wait_time = 0;
 
     CHECK_FUNC_ERR(is_param_valid(argc, argv, &client, &max_retry_cnt), rc)
     
     printf("UDP Client Start.\n");
     CHECK_FUNC_ERR(init_udp_socket(), sock)
     
-    for (int i = 0; i <= 20000; ) {
-        sprintf(send_buf, "%s[%d]\n", argv[3], i);
+    for (int i = 0; i <= 50000; ) {
+        sprintf(send_buf, "%s[%d]", argv[3], i);
         CHECK_FUNC_ERR(udp_send(sock, &client, send_buf), rc)
-        CHECK_FUNC_ERR(udp_select_check(sock), rc)
-        if (rc > 0) {
-            CHECK_FUNC_ERR(udp_recv(sock, recv_buf, send_buf), rc)
-            if (rc > 0) {
-                if (strcmp(send_buf, recv_buf) == 0)
-                    // comfirm recv. the right echo from server
-                    i++;
-            }
-        } else if (rc == 0) {
-            // Delay for a while since server might be busy.
-            CHECK_FUNC_ERR(udp_send_delay(&retry_cnt, max_retry_cnt), rc)
-            sleep(rc);
+        CHECK_FUNC_ERR(udp_select_check(sock, echo_wait_time), rc)
+        if (rc == 0) {
+            // Adjust the wait time of select() since server might be busy.
+            CHECK_FUNC_ERR(udp_send_delay(&retry_cnt, max_retry_cnt), echo_wait_time)
         }
+
+        CHECK_FUNC_ERR(udp_recv(sock, recv_buf, send_buf, retry_cnt), rc)
+        if (rc > 0) {
+            // comfirm recv. the right echo from server
+            if (strcmp(send_buf, recv_buf) == 0) 
+                i++;
+        }        
     }
     
     close(sock);
