@@ -158,9 +158,14 @@ static int is_param_valid(int argc,
                           int *max_retry_cnt)
 {
     int server_port = 0;
-
+    
     if (argc != 5) {
-		printf("[Usage] ./udp_client <Server IP> <Server Port> <Message> <Max-Retry>\n");
+		printf("[Usage] ./udp_client <Server IP> <Server Port> <Message> <Max-Retry>\n\n");
+        printf("<Server IP>: The server ip \n");
+        printf("<Server Port>: The server port \n");
+        printf("<Message>: The message sent to server. 0 < Message length < 255. \n");
+        printf("<Max-Retry>: The max retry count that no echo data received from server. Range: 0 < Max-Retry <= 10.\n\n");
+        
 		return -1;
 	}
 
