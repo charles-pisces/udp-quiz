@@ -7,7 +7,6 @@
 #include <fcntl.h>
 #include <errno.h>
 
-#define SERVER_PORT             12345
 #define BUF_SIZE                255
 
 #define CHECK_FUNC_ERR(func, rc) {									\

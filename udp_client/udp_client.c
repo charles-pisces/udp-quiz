@@ -7,13 +7,11 @@
 #include <fcntl.h>
 #include <errno.h>
 
-#define SERVER_PORT             12345
 #define BUF_SIZE                255
 // Exponential Backoff Algorithm parameters
 #define EB_BASE                 500     // 500ms
 #define EB_MULTIPLIER           2
 #define EB_MAX_WAIT_TIME        8       // 8s
-#define MAX_RETRY_CNT           10
 
 
 #define CHECK_FUNC_ERR(func, rc) {									\
