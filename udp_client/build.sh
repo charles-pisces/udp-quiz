@@ -1,1 +1,1 @@
-gcc udp_cliet.c -o udp_client
+gcc udp_client.c -o udp_client
